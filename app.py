@@ -12,6 +12,10 @@ st.set_page_config(
     layout="centered"
 )
 
+# Initialize session state for transcriptions if it doesn't exist
+if 'transcriptions' not in st.session_state:
+    st.session_state.transcriptions = {}
+
 # Check ffmpeg installation
 try:
     subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
@@ -64,6 +68,11 @@ def transcribe_audio(audio_file):
         except Exception as e:
             st.warning("Note: Temporary files will be cleaned up later.")
 
+# Clear transcriptions button
+if st.button("🗑️ Clear All Transcriptions"):
+    st.session_state.transcriptions = {}
+    st.experimental_rerun()
+
 # File uploader with multiple files enabled
 uploaded_files = st.file_uploader(
     "Choose audio files",
@@ -76,35 +85,57 @@ if uploaded_files:
     # Add a transcribe button
     if st.button("🎯 Transcribe All Files"):
         for uploaded_file in uploaded_files:
-            st.write(f"Processing: {uploaded_file.name}")
-            with st.spinner(f'Transcribing {uploaded_file.name}... This might take a few minutes.'):
-                try:
-                    # Get transcription
-                    transcription = transcribe_audio(uploaded_file)
-                    
-                    # Display results in an expandable section
-                    with st.expander(f"📝 Transcription: {uploaded_file.name}", expanded=True):
-                        st.write(transcription)
+            if uploaded_file.name not in st.session_state.transcriptions:
+                st.write(f"Processing: {uploaded_file.name}")
+                with st.spinner(f'Transcribing {uploaded_file.name}... This might take a few minutes.'):
+                    try:
+                        # Get transcription
+                        transcription = transcribe_audio(uploaded_file)
                         
-                        # Download button for this file
-                        st.download_button(
-                            label=f"📥 Download Transcription for {uploaded_file.name}",
-                            data=transcription,
-                            file_name=f"{uploaded_file.name}_transcription.txt",
-                            mime="text/plain"
-                        )
-                    
-                except Exception as e:
-                    st.error(f"Error processing {uploaded_file.name}")
-                    st.error(f"Error details: {str(e)}")
+                        # Store in session state
+                        st.session_state.transcriptions[uploaded_file.name] = transcription
+                        
+                    except Exception as e:
+                        st.error(f"Error processing {uploaded_file.name}")
+                        st.error(f"Error details: {str(e)}")
+
+# Display all transcriptions
+if st.session_state.transcriptions:
+    st.markdown("### 📝 All Transcriptions")
+    
+    # Create a combined text of all transcriptions
+    all_transcriptions = "\n\n".join([
+        f"=== {filename} ===\n{text}"
+        for filename, text in st.session_state.transcriptions.items()
+    ])
+    
+    # Add a download button for all transcriptions
+    st.download_button(
+        label="📥 Download All Transcriptions",
+        data=all_transcriptions,
+        file_name="all_transcriptions.txt",
+        mime="text/plain"
+    )
+    
+    # Display individual transcriptions
+    for filename, transcription in st.session_state.transcriptions.items():
+        with st.expander(f"Transcription: {filename}", expanded=True):
+            st.write(transcription)
+            st.download_button(
+                label=f"📥 Download This Transcription",
+                data=transcription,
+                file_name=f"{filename}_transcription.txt",
+                mime="text/plain",
+                key=f"download_{filename}"  # Unique key for each button
+            )
 
 # Footer
 st.markdown("---")
 st.markdown("""
 ### Tips:
 - You can select multiple files at once
-- For best results, use clear audio files
-- Supported formats: MP3, WAV, M4A, OGG, FLAC
-- Each transcription will appear in its own expandable section
+- Transcriptions are saved until you clear them
+- Use the 'Clear All Transcriptions' button to start fresh
+- Download individual transcriptions or all at once
 """)
 st.markdown("Made with ❤️ using OpenAI's Whisper")
