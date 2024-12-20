@@ -4,6 +4,8 @@ import tempfile
 import os
 from pathlib import Path
 import subprocess
+import soundfile as sf
+import io
 
 # Page config
 st.set_page_config(
@@ -15,19 +17,6 @@ st.set_page_config(
 # Initialize session state for transcriptions if it doesn't exist
 if 'transcriptions' not in st.session_state:
     st.session_state.transcriptions = {}
-
-# Check ffmpeg installation
-try:
-    subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
-    st.write("ffmpeg is properly installed!")
-except Exception as e:
-    st.error("ffmpeg is not properly installed. Please contact support.")
-    st.error(f"Error: {str(e)}")
-    st.stop()
-
-# Title
-st.title("🎙️ Audio Transcription")
-st.write("Upload multiple audio files and get their transcriptions!")
 
 # Initialize whisper model
 @st.cache_resource
@@ -41,7 +30,32 @@ except Exception as e:
     st.error(f"Error loading model: {str(e)}")
     st.stop()
 
+def validate_audio(audio_file):
+    """Validate audio file before processing"""
+    try:
+        # Try reading the audio file
+        data, samplerate = sf.read(io.BytesIO(audio_file.getvalue()))
+        
+        # Check if file is empty
+        if len(data) == 0:
+            return False, "Audio file appears to be empty"
+            
+        # Check if duration is too short
+        duration = len(data) / samplerate
+        if duration < 0.1:  # Less than 0.1 seconds
+            return False, "Audio file is too short"
+            
+        return True, "Audio file is valid"
+    except Exception as e:
+        return False, f"Invalid audio file: {str(e)}"
+
 def transcribe_audio(audio_file):
+    """Transcribe audio with improved error handling"""
+    # First validate the audio file
+    is_valid, message = validate_audio(audio_file)
+    if not is_valid:
+        raise ValueError(message)
+    
     # Create a unique temporary directory
     temp_dir = tempfile.mkdtemp()
     temp_path = Path(temp_dir) / f"audio{os.path.splitext(audio_file.name)[1]}"
@@ -57,7 +71,15 @@ def transcribe_audio(audio_file):
             fp16=False,
             language='en'
         )
+        
+        # Verify transcription result
+        if not result or not result.get("text"):
+            raise ValueError("No transcription produced")
+            
         return result["text"]
+    
+    except Exception as e:
+        raise Exception(f"Transcription failed: {str(e)}")
     
     finally:
         # Clean up
@@ -65,8 +87,8 @@ def transcribe_audio(audio_file):
             if temp_path.exists():
                 temp_path.unlink()
             os.rmdir(temp_dir)
-        except Exception as e:
-            st.warning("Note: Temporary files will be cleaned up later.")
+        except Exception:
+            pass
 
 # Clear transcriptions button
 if st.button("🗑️ Clear All Transcriptions"):
@@ -84,6 +106,8 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     # Add a transcribe button
     if st.button("🎯 Transcribe All Files"):
+        skipped_files = []
+        
         for uploaded_file in uploaded_files:
             if uploaded_file.name not in st.session_state.transcriptions:
                 st.write(f"Processing: {uploaded_file.name}")
@@ -94,10 +118,17 @@ if uploaded_files:
                         
                         # Store in session state
                         st.session_state.transcriptions[uploaded_file.name] = transcription
+                        st.success(f"Successfully transcribed: {uploaded_file.name}")
                         
                     except Exception as e:
-                        st.error(f"Error processing {uploaded_file.name}")
-                        st.error(f"Error details: {str(e)}")
+                        error_msg = str(e)
+                        skipped_files.append((uploaded_file.name, error_msg))
+                        st.error(f"Error processing {uploaded_file.name}: {error_msg}")
+        
+        if skipped_files:
+            st.warning("Some files were skipped due to errors:")
+            for filename, error in skipped_files:
+                st.write(f"- {filename}: {error}")
 
 # Display all transcriptions
 if st.session_state.transcriptions:
@@ -129,13 +160,13 @@ if st.session_state.transcriptions:
                 key=f"download_{filename}"  # Unique key for each button
             )
 
-# Footer
+# Footer with enhanced tips
 st.markdown("---")
 st.markdown("""
 ### Tips:
-- You can select multiple files at once
-- Transcriptions are saved until you clear them
-- Use the 'Clear All Transcriptions' button to start fresh
-- Download individual transcriptions or all at once
+- Make sure your audio files are not corrupted or empty
+- Audio should be clear and at least 0.1 seconds long
+- If a file fails, try converting it to a different format (e.g., MP3 or WAV)
+- Some very short or corrupted files might not process correctly
 """)
 st.markdown("Made with ❤️ using OpenAI's Whisper")
