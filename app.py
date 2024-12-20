@@ -23,7 +23,7 @@ except Exception as e:
 
 # Title
 st.title("🎙️ Audio Transcription")
-st.write("Upload your audio file and get the transcription instantly!")
+st.write("Upload multiple audio files and get their transcriptions!")
 
 # Initialize whisper model
 @st.cache_resource
@@ -64,37 +64,47 @@ def transcribe_audio(audio_file):
         except Exception as e:
             st.warning("Note: Temporary files will be cleaned up later.")
 
-# File uploader
-uploaded_file = st.file_uploader(
-    "Choose an audio file",
+# File uploader with multiple files enabled
+uploaded_files = st.file_uploader(
+    "Choose audio files",
     type=['mp3', 'wav', 'm4a', 'ogg', 'flac'],
-    help="Upload your audio file here. Supported formats: MP3, WAV, M4A, OGG, FLAC"
+    accept_multiple_files=True,
+    help="Upload your audio files here. Supported formats: MP3, WAV, M4A, OGG, FLAC"
 )
 
-if uploaded_file is not None:
+if uploaded_files:
     # Add a transcribe button
-    if st.button("🎯 Transcribe"):
-        with st.spinner('Transcribing your audio... This might take a few minutes.'):
-            try:
-                # Get transcription
-                transcription = transcribe_audio(uploaded_file)
-                
-                # Display results
-                st.success("Transcription completed!")
-                st.subheader("📝 Transcription:")
-                st.write(transcription)
-                
-                # Download button
-                st.download_button(
-                    label="📥 Download Transcription",
-                    data=transcription,
-                    file_name=f"{uploaded_file.name}_transcription.txt",
-                    mime="text/plain"
-                )
-            except Exception as e:
-                st.error("An error occurred during transcription. Please try again.")
-                st.error(f"Error details: {str(e)}")
+    if st.button("🎯 Transcribe All Files"):
+        for uploaded_file in uploaded_files:
+            st.write(f"Processing: {uploaded_file.name}")
+            with st.spinner(f'Transcribing {uploaded_file.name}... This might take a few minutes.'):
+                try:
+                    # Get transcription
+                    transcription = transcribe_audio(uploaded_file)
+                    
+                    # Display results in an expandable section
+                    with st.expander(f"📝 Transcription: {uploaded_file.name}", expanded=True):
+                        st.write(transcription)
+                        
+                        # Download button for this file
+                        st.download_button(
+                            label=f"📥 Download Transcription for {uploaded_file.name}",
+                            data=transcription,
+                            file_name=f"{uploaded_file.name}_transcription.txt",
+                            mime="text/plain"
+                        )
+                    
+                except Exception as e:
+                    st.error(f"Error processing {uploaded_file.name}")
+                    st.error(f"Error details: {str(e)}")
 
 # Footer
 st.markdown("---")
+st.markdown("""
+### Tips:
+- You can select multiple files at once
+- For best results, use clear audio files
+- Supported formats: MP3, WAV, M4A, OGG, FLAC
+- Each transcription will appear in its own expandable section
+""")
 st.markdown("Made with ❤️ using OpenAI's Whisper")
