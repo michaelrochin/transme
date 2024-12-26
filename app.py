@@ -21,7 +21,7 @@ if 'transcriptions' not in st.session_state:
 # Initialize whisper model
 @st.cache_resource
 def load_model():
-    model = whisper.load_model("tiny")
+    model = whisper.load_model("medium")
     return model
 
 try:
